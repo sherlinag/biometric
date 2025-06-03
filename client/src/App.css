@@ -1,0 +1,133 @@
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.main-container {
+  background: #33343a;
+  min-height: 100vh;
+}
+
+.header {
+  background: #33343a;
+  color: #f5c97b;
+  padding: 0;
+}
+
+.title {
+  font-size: 1.2rem;
+  font-weight: 500;
+  letter-spacing: 1px;
+  padding: 16px 0 0 32px;
+  display: inline-block;
+}
+
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #33343a;
+  padding: 0px 16px;
+  height: 48px;
+  margin-top: 8px;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo {
+  background: #bfbffb;
+  color: #1a1a1a;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.nav-link {
+  color: #fff;
+  text-decoration: none;
+  margin: 0 12px;
+  padding: 8px 6px;
+  font-size: 1rem;
+  border-radius: 2px;
+  transition: background 0.2s;
+}
+
+.nav-link:hover {
+  background: #7a7afc;
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-guide-btn {
+  background: #7a7afc;
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  padding: 6px 18px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.user-guide-btn:hover {
+  background: #5757d1;
+}
+
+.icon-text {
+  color: #fff;
+  font-size: 1rem;
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.content {
+  display: flex;
+  background: #33343a;
+  min-height: 80vh;
+}
+
+.sidebar {
+  width: 180px;
+  background: #d1d1eb;
+  padding: 16px 0 0 0;
+  min-height: 80vh;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-right: 1px solid #c7c7e6;
+}
+
+.sidebar details {
+  color: #333;
+  font-size: 1rem;
+}
+
+.sidebar summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sidebar-item {
+  padding-left: 20px;
+  margin-top: 4px;
+  color: #666;
+}
+
+.main-content {
+  background: #fff;
+  flex: 1;
+  min-height: 80vh;
+  border-radius: 0 0 4px 0;
+}
