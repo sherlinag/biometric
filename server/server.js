@@ -1,58 +1,170 @@
-// backend/server.js
 const express = require('express');
-const cors = require('cors');
-const DigestFetch = require('digest-fetch').default;
 const https = require('https');
+const axios = require('axios');
+const crypto = require('crypto');
+const cors = require('cors');
+const path = require('path');
 
 const app = express();
-const port = 3000;
-
-// Middleware
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 
-// HTTPS agent to skip self-signed certificate errors
-const agent = new https.Agent({
-  rejectUnauthorized: false,
+// Serve the UI HTML on root
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.post('/fetch', async (req, res) => {
+// Helper: parse WWW-Authenticate header for digest auth
+function parseWWWAuthenticate(header) {
+  const parts = header.match(/(\w+)="?([^",]+)"?/g);
+  const obj = {};
+  if (!parts) return obj;
+  parts.forEach((part) => {
+    const [key, val] = part.split('=');
+    obj[key] = val.replace(/"/g, '');
+  });
+  return obj;
+}
+
+// Helper: generate digest auth header
+function generateDigestAuthHeader({ username, password, method, uri, wwwAuth, nc, cnonce }) {
+  const realm = wwwAuth.realm;
+  const nonce = wwwAuth.nonce;
+  const qop = wwwAuth.qop;
+  const algorithm = wwwAuth.algorithm || 'MD5';
+
+  // HA1 = MD5(username:realm:password)
+  const ha1 = crypto.createHash('md5').update(`${username}:${realm}:${password}`).digest('hex');
+
+  // HA2 = MD5(method:uri)
+  const ha2 = crypto.createHash('md5').update(`${method}:${uri}`).digest('hex');
+
+  // Response = MD5(HA1:nonce:nonceCount:cnonce:qop:HA2)
+  const response = crypto
+    .createHash('md5')
+    .update(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
+    .digest('hex');
+
+  // Construct Authorization header value
+  return `Digest username="${username}", realm="${realm}", nonce="${nonce}", uri="${uri}", algorithm=${algorithm}, response="${response}", qop=${qop}, nc=${nc}, cnonce="${cnonce}"`;
+}
+
+
+app.post('/sendtoserver', async (req, res) => {
   try {
-    const { url, username, password, body } = req.body;
+    const dataFromFrontend = req.body;
 
-    if (!url || !username || !password || !body) {
-      return res.status(400).json({ error: 'Missing required fields.' });
-    }
-
-    const client = new DigestFetch(username, password);
-    const response = await client.fetch(url, {
+    // Forward to https://campus.ordinal.in/api/callback
+    const response = await fetch('https://campus.ordinal.in/api/callback', {
       method: 'POST',
-      body: JSON.stringify(body),
       headers: { 'Content-Type': 'application/json' },
-      agent,
+      body: JSON.stringify({
+          dataFromFrontend:dataFromFrontend
+        })
     });
 
-    const json = await response.json();
-    res.json(json);
+    const responseData = await response.json();
+
+    // Send the response back to the frontend
+    res.status(response.status).json(responseData);
+  } catch (err) {
+    console.error('Error sending to callback:', err);
+    res.status(500).json({ error: 'Failed to send to callback' });
+  }
+});
+
+
+
+app.post('/fetch', async (req, res) => {
+  const { url, username, password, body } = req.body;
+
+  if (!url || !username || !password || !body) {
+    return res.status(400).json({ error: 'Missing required parameters: url, username, password, body' });
+  }
+
+  try {
+    // First unauthenticated request to get the 401 challenge
+    const initialResponse = await axios({
+      method: 'POST',
+      url,
+      headers: {
+        'User-Agent': 'Node.js Client',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      data: body,
+      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      validateStatus: null,
+    });
+
+    if (initialResponse.status !== 401) {
+      return res.status(500).json({ error: 'Unexpected success without authentication' });
+    }
+
+    const wwwAuthHeader = initialResponse.headers['www-authenticate'];
+    if (!wwwAuthHeader) {
+      return res.status(500).json({ error: 'No WWW-Authenticate header received' });
+    }
+
+    const wwwAuth = parseWWWAuthenticate(wwwAuthHeader);
+
+    const nc = '00000001';
+    const cnonce = crypto.randomBytes(8).toString('hex');
+    const method = 'POST';
+    const urlObj = new URL(url);
+    const uri = urlObj.pathname + urlObj.search;
+
+    const authHeader = generateDigestAuthHeader({ username, password, method, uri, wwwAuth, nc, cnonce });
+
+    try {
+      // Authenticated request to Hikvision device
+      const response = await axios({
+        method: 'POST',
+        url,
+        headers: {
+          'Authorization': authHeader,
+          'User-Agent': 'Node.js Client',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+        data: body,
+      });
+
+      const receivedData = response.data;
+
+      // ✅ Forward to target API endpoint
+      const callbackUrl = 'https://campus.ordinal.in/api/callback';
+      try {
+        await axios.post(callbackUrl, receivedData, {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+      } catch (callbackErr) {
+        console.error('Error forwarding data to callback:', callbackErr.message);
+      }
+
+      // Return response to the frontend regardless
+      return res.json(receivedData);
+
+    } catch (authErr) {
+      return res.status(500).json({
+        error: 'Authenticated request failed',
+        detail: authErr.response?.data || authErr.message || authErr.toString(),
+      });
+    }
+
   } catch (error) {
-    console.error('Error in /fetch:', error);
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({
+      error: 'Initial request failed',
+      detail: error.response?.data || error.message || error.toString(),
+    });
   }
 });
 
-app.post('/sendtoserver', (req, res) => {
-  const { dataFromFrontend } = req.body;
 
-  if (!dataFromFrontend) {
-    return res.status(400).json({ error: 'No data received' });
-  }
-
-  console.log('Data received from frontend:', dataFromFrontend);
-  // TODO: process/store the data (e.g., forward to ERP, save to DB)
-
-  res.json({ status: 'Success', received: dataFromFrontend });
-});
-
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Digest Auth Proxy Server listening on port ${PORT}`);
 });
